@@ -67,6 +67,35 @@ def _escape(text: str) -> str:
     return (text or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
+def consent_button(*, enabled: bool, locale: str = "fr") -> InlineKeyboardButton:
+    """Return the reversible taste-consent control in its current state."""
+    french = str(locale).startswith("fr")
+    if enabled:
+        return InlineKeyboardButton(
+            "Ne plus utiliser mes goûts ici" if french else "Stop using my taste here",
+            callback_data="consent:off",
+        )
+    return InlineKeyboardButton(
+        "🙋 Utiliser mes goûts ici" if french else "🙋 Use my taste here",
+        callback_data="consent:on",
+    )
+
+
+def consent_keyboard(
+    keyboard: InlineKeyboardMarkup | None, *, enabled: bool, locale: str = "fr"
+) -> InlineKeyboardMarkup:
+    """Replace the consent row without disturbing event and map links."""
+    rows = [list(row) for row in (keyboard.inline_keyboard if keyboard else [])]
+    button = consent_button(enabled=enabled, locale=locale)
+    for index, row in enumerate(rows):
+        if any((item.callback_data or "").startswith("consent:") for item in row):
+            rows[index] = [button]
+            break
+    else:
+        rows.append([button])
+    return InlineKeyboardMarkup(rows)
+
+
 def picks_message(reply: dict, *, locale: str = "fr") -> tuple[str, InlineKeyboardMarkup]:
     """One message carrying every pick, plus the buttons under it."""
     french = str(locale).startswith("fr")
@@ -105,14 +134,7 @@ def picks_message(reply: dict, *, locale: str = "fr") -> tuple[str, InlineKeyboa
 
     # Persistent, reversible, and as easy to switch off as on — the label says
     # taste, never attendance. Attendance is the poll.
-    rows.append(
-        [
-            InlineKeyboardButton(
-                "🙋 Utiliser mes goûts ici" if french else "🙋 Use my taste here",
-                callback_data="consent:on",
-            )
-        ]
-    )
+    rows.append([consent_button(enabled=False, locale=locale)])
 
     if reply.get("suggest_connect"):
         lines.append(

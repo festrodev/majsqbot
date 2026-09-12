@@ -11,10 +11,18 @@ from __future__ import annotations
 import logging
 import os
 import re
+import time
 
 from telegram import Update
-from telegram.constants import ChatType, ParseMode
-from telegram.ext import Application, CallbackQueryHandler, CommandHandler, MessageHandler, filters
+from telegram.constants import ChatMemberStatus, ChatType, ParseMode
+from telegram.ext import (
+    Application,
+    CallbackQueryHandler,
+    ChatMemberHandler,
+    CommandHandler,
+    MessageHandler,
+    filters,
+)
 
 from majsq_bot import agent, render
 
@@ -29,6 +37,11 @@ _INTENT = re.compile(
     r"any ideas|ce soir|this weekend|tonight|sortir|go out)\b",
     re.I,
 )
+
+_GROUP_DEBOUNCE_SECONDS = 8
+_AGENT_ERROR_COOLDOWN_SECONDS = 60
+_LAST_GROUP_TURN: dict[int, float] = {}
+_LAST_AGENT_ERROR: dict[int, float] = {}
 
 
 def _locale(update: Update) -> str:
@@ -57,6 +70,28 @@ def _addressed(update: Update) -> bool:
     if reply_to and reply_to.from_user and reply_to.from_user.is_bot:
         return True
     return bool(_INTENT.search(text))
+
+
+def _bare_mention(text: str) -> bool:
+    return bool(BOT_USERNAME and text.strip().lower() == f"@{BOT_USERNAME}".lower())
+
+
+def _allow_group_turn(chat_id: int) -> bool:
+    now = time.monotonic()
+    last_turn = _LAST_GROUP_TURN.get(chat_id)
+    if last_turn is not None and now - last_turn < _GROUP_DEBOUNCE_SECONDS:
+        return False
+    _LAST_GROUP_TURN[chat_id] = now
+    return True
+
+
+def _should_report_agent_error(chat_id: int) -> bool:
+    now = time.monotonic()
+    last_error = _LAST_AGENT_ERROR.get(chat_id)
+    if last_error is not None and now - last_error < _AGENT_ERROR_COOLDOWN_SECONDS:
+        return False
+    _LAST_AGENT_ERROR[chat_id] = now
+    return True
 
 
 async def _send_reply(update: Update, reply: dict, locale: str) -> None:
@@ -95,7 +130,28 @@ async def start(update: Update, _context) -> None:
 async def on_message(update: Update, _context) -> None:
     if not _addressed(update):
         return
-    await _turn(update, text=update.effective_message.text or "")
+    chat = update.effective_chat
+    if _kind(update) == "group" and not _allow_group_turn(chat.id):
+        return
+    text = update.effective_message.text or ""
+    await _turn(update, text="quoi faire ce soir ?" if _bare_mention(text) else text)
+
+
+async def on_my_chat_member(update: Update, _context) -> None:
+    """Welcome a group only when the bot has just been added to it."""
+    membership = update.my_chat_member
+    if not membership or _kind(update) != "group":
+        return
+    old_status = membership.old_chat_member.status
+    new_status = membership.new_chat_member.status
+    joined = old_status in {ChatMemberStatus.LEFT, ChatMemberStatus.BANNED} and new_status in {
+        ChatMemberStatus.MEMBER,
+        ChatMemberStatus.ADMINISTRATOR,
+    }
+    if joined:
+        await update.effective_chat.send_message(
+            render.welcome(is_group=True, locale=_locale(update)), parse_mode=ParseMode.HTML
+        )
 
 
 async def on_callback(update: Update, _context) -> None:
@@ -127,6 +183,11 @@ async def on_callback(update: Update, _context) -> None:
             note = (
                 "Tes goûts ne comptent plus ici." if french else "Your taste no longer counts here."
             )
+        await query.edit_message_reply_markup(
+            reply_markup=render.consent_keyboard(
+                query.message.reply_markup, enabled=now_on, locale=locale
+            )
+        )
         await query.message.reply_text(note)
         return
 
@@ -153,11 +214,12 @@ async def _turn(
         )
     except agent.AgentError:
         logger.exception("agent turn failed")
-        await update.effective_message.reply_text(
-            "Je n'arrive pas à joindre mon cerveau 🧠 Réessaie dans une minute."
-            if locale == "fr"
-            else "I can't reach my brain 🧠 Try again in a minute."
-        )
+        if _should_report_agent_error(chat.id):
+            await update.effective_message.reply_text(
+                "Je n'arrive pas à joindre mon cerveau 🧠 Réessaie dans une minute."
+                if locale == "fr"
+                else "I can't reach my brain 🧠 Try again in a minute."
+            )
         return
     await _send_reply(update, reply, locale)
 
@@ -167,5 +229,8 @@ def build_application(token: str) -> Application:
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", start))
     application.add_handler(CallbackQueryHandler(on_callback))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_message))
+    application.add_handler(ChatMemberHandler(on_my_chat_member, ChatMemberHandler.MY_CHAT_MEMBER))
+    application.add_handler(
+        MessageHandler(filters.UpdateType.MESSAGE & filters.TEXT & ~filters.COMMAND, on_message)
+    )
     return application
