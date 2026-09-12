@@ -40,16 +40,22 @@ jobs:
 
       - name: The webhook refuses an unsigned update
         # The single most important behaviour in this repo: a webhook URL is
-        # public, so the secret header is the only thing standing between
-        # Telegram and anyone who guesses the URL.
+        # public, so the secret header is the only thing between Telegram and
+        # anyone who guesses it.
+        #
+        # Deliberately runs with NO bot token. python-telegram-bot validates a
+        # token against Telegram's servers during Application.initialize(), so
+        # a fake token turns this into a network test of someone else's API —
+        # which is exactly the kind of flake that teaches people to ignore CI.
+        # Unconfigured is enough: the secret gate runs before the configuration
+        # check, which is the property being asserted.
         env:
-          TELEGRAM_BOT_TOKEN: "123456:test-token-not-real"
           TELEGRAM_WEBHOOK_SECRET: "ci-secret"
         run: |
           pip install httpx
           python - <<'PY'
           from fastapi.testclient import TestClient
-          from majsq_bot.app import app
+          from majsq_bot.app import _already_handled, app
 
           with TestClient(app) as client:
               assert client.get("/healthz").status_code == 200
@@ -57,14 +63,20 @@ jobs:
               bad = client.post("/tg/webhook/", json={"update_id": 1})
               assert bad.status_code == 403, f"unsigned update was accepted: {bad.status_code}"
 
-              headers = {"X-Telegram-Bot-Api-Secret-Token": "ci-secret"}
-              first = client.post("/tg/webhook/", json={"update_id": 7}, headers=headers)
-              assert first.status_code == 200, first.text
+              # Signed but unconfigured: 503, NOT 403. Proves the secret gate
+              # ran first and the request got past it.
+              ok = client.post(
+                  "/tg/webhook/",
+                  json={"update_id": 2},
+                  headers={"X-Telegram-Bot-Api-Secret-Token": "ci-secret"},
+              )
+              assert ok.status_code == 503, f"expected 503 when unconfigured, got {ok.status_code}"
 
-              # Telegram retries on any non-2xx; a retry must not act twice.
-              retry = client.post("/tg/webhook/", json={"update_id": 7}, headers=headers)
-              assert retry.json().get("duplicate") is True, retry.text
-          print("  secret header enforced, update_id de-duplicated")
+          # Telegram retries on any non-2xx, and a retry must never post a
+          # second set of picks to the group.
+          assert _already_handled(99) is False
+          assert _already_handled(99) is True
+          print("  secret checked before configuration, update_id de-duplicated")
           PY
 
   docker:

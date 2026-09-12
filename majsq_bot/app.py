@@ -73,11 +73,15 @@ async def webhook(
     request: Request,
     x_telegram_bot_api_secret_token: str | None = Header(default=None),
 ):
-    if not application:
-        raise HTTPException(503, "TELEGRAM_BOT_TOKEN is not set")
+    # The secret is checked FIRST, before anything about our own configuration.
+    # The other order leaks: an unsigned request to a misconfigured bot would
+    # come back "TELEGRAM_BOT_TOKEN is not set", telling whoever found the URL
+    # something about the deployment before proving they are Telegram.
     if WEBHOOK_SECRET and x_telegram_bot_api_secret_token != WEBHOOK_SECRET:
         # Deliberately 403, not 401: there is no credential to re-present.
         raise HTTPException(403, "bad secret token")
+    if not application:
+        raise HTTPException(503, "TELEGRAM_BOT_TOKEN is not set")
 
     payload = await request.json()
     update_id = payload.get("update_id")
