@@ -21,8 +21,18 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 _FR_DAYS = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"]
 _FR_MONTHS = [
-    "janv.", "févr.", "mars", "avr.", "mai", "juin",
-    "juil.", "août", "sept.", "oct.", "nov.", "déc.",
+    "janv.",
+    "févr.",
+    "mars",
+    "avr.",
+    "mai",
+    "juin",
+    "juil.",
+    "août",
+    "sept.",
+    "oct.",
+    "nov.",
+    "déc.",
 ]
 
 
@@ -63,7 +73,11 @@ def picks_message(reply: dict, *, locale: str = "fr") -> tuple[str, InlineKeyboa
     lines = [f"<b>{_escape(reply.get('text', ''))}</b>", ""]
 
     for index, pick in enumerate(reply.get("picks", []), start=1):
-        bits = [when_label(pick, locale=locale), pick.get("venue_name") or "", price_label(pick, locale=locale)]
+        bits = [
+            when_label(pick, locale=locale),
+            pick.get("venue_name") or "",
+            price_label(pick, locale=locale),
+        ]
         meta = " · ".join(bit for bit in bits if bit)
         lines.append(f"<b>{index}. {_escape(pick.get('title', ''))}</b>")
         if meta:
@@ -75,7 +89,9 @@ def picks_message(reply: dict, *, locale: str = "fr") -> tuple[str, InlineKeyboa
     rows: list[list[InlineKeyboardButton]] = []
     for index, pick in enumerate(reply.get("picks", []), start=1):
         if pick.get("url"):
-            rows.append([InlineKeyboardButton(f"{index}. {pick.get('title', '')[:28]}", url=pick["url"])])
+            rows.append(
+                [InlineKeyboardButton(f"{index}. {pick.get('title', '')[:28]}", url=pick["url"])]
+            )
 
     if reply.get("map_url"):
         rows.append(
@@ -138,7 +154,7 @@ def welcome(*, is_group: bool, locale: str = "fr", bot_username: str = "") -> st
     if is_group:
         return (
             "Hi 👋 I'm <b>maj$q</b>.\n\n"
-            "Ask me <i>\"what should we do tonight?\"</i> and I'll suggest three real "
+            'Ask me <i>"what should we do tonight?"</i> and I\'ll suggest three real '
             "things happening in Montréal, with a poll to settle it and a map.\n\n"
             "Anyone can connect their Festro account in a DM, then tap "
             "<b>🙋 Use my taste here</b> so their taste counts in this group."

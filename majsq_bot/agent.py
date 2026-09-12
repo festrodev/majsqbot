@@ -66,9 +66,7 @@ async def turn(
 
     async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
         try:
-            response = await client.post(
-                f"{AGENT_URL}/api/turn/", json=payload, headers=_headers()
-            )
+            response = await client.post(f"{AGENT_URL}/api/turn/", json=payload, headers=_headers())
         except httpx.HTTPError as exc:
             raise AgentError(f"agent unreachable: {exc}") from exc
     if response.status_code >= 400:
@@ -89,9 +87,7 @@ async def set_consent(
         "use_my_taste": enabled,
     }
     async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-        response = await client.post(
-            f"{AGENT_URL}/api/consent/", json=payload, headers=_headers()
-        )
+        response = await client.post(f"{AGENT_URL}/api/consent/", json=payload, headers=_headers())
     if response.status_code >= 400:
         raise AgentError(f"consent failed: {response.status_code}")
     return bool(response.json().get("use_my_taste"))

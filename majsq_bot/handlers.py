@@ -120,9 +120,13 @@ async def on_callback(update: Update, _context) -> None:
             return
         french = locale == "fr"
         if now_on:
-            note = "✅ Tes goûts comptent dans ce groupe." if french else "✅ Your taste counts here."
+            note = (
+                "✅ Tes goûts comptent dans ce groupe." if french else "✅ Your taste counts here."
+            )
         else:
-            note = "Tes goûts ne comptent plus ici." if french else "Your taste no longer counts here."
+            note = (
+                "Tes goûts ne comptent plus ici." if french else "Your taste no longer counts here."
+            )
         await query.message.reply_text(note)
         return
 
@@ -131,7 +135,9 @@ async def on_callback(update: Update, _context) -> None:
         await _turn(update, text="", chosen={name: value}, from_callback=True)
 
 
-async def _turn(update: Update, *, text: str, chosen: dict | None = None, from_callback: bool = False) -> None:
+async def _turn(
+    update: Update, *, text: str, chosen: dict | None = None, from_callback: bool = False
+) -> None:
     locale = _locale(update)
     chat = update.effective_chat
     try:
