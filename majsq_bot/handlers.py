@@ -14,7 +14,7 @@ import re
 import time
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.constants import ChatMemberStatus, ChatType, ParseMode
+from telegram.constants import ChatAction, ChatMemberStatus, ChatType, ParseMode
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
@@ -212,6 +212,7 @@ async def _turn(
 ) -> None:
     locale = _locale(update)
     chat = update.effective_chat
+    await chat.send_action(ChatAction.TYPING)
     try:
         reply = await agent.turn(
             chat_id=chat.id,
