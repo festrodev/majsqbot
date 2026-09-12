@@ -16,6 +16,7 @@ Rendering rules that are easy to get wrong and expensive to get wrong:
 from __future__ import annotations
 
 from datetime import datetime
+from urllib.parse import urlparse
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
@@ -96,6 +97,21 @@ def consent_keyboard(
     return InlineKeyboardMarkup(rows)
 
 
+def _telegram_url(url: str) -> str:
+    """Return a URL Telegram can place in an inline keyboard, or an empty string.
+
+    The agent uses localhost map links during offline development. Telegram rejects
+    them outright, which would reject the whole picks message, not just the map
+    button. Keep the recommendations usable until the web surface has a public URL.
+    """
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        return ""
+    if parsed.hostname.lower() in {"localhost", "127.0.0.1", "::1"}:
+        return ""
+    return url
+
+
 def picks_message(reply: dict, *, locale: str = "fr") -> tuple[str, InlineKeyboardMarkup]:
     """One message carrying every pick, plus the buttons under it."""
     french = str(locale).startswith("fr")
@@ -122,12 +138,13 @@ def picks_message(reply: dict, *, locale: str = "fr") -> tuple[str, InlineKeyboa
                 [InlineKeyboardButton(f"{index}. {pick.get('title', '')[:28]}", url=pick["url"])]
             )
 
-    if reply.get("map_url"):
+    map_url = _telegram_url(str(reply.get("map_url") or ""))
+    if map_url:
         rows.append(
             [
                 InlineKeyboardButton(
                     "🗺 Ouvrir sur la carte" if french else "🗺 Open the map",
-                    url=reply["map_url"],
+                    url=map_url,
                 )
             ]
         )
