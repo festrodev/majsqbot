@@ -1,0 +1,81 @@
+name: CI
+
+# Public repo — Actions minutes are free, so this runs on every push and PR.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install ruff==0.8.4
+
+      - name: Lint
+        run: ruff check .
+
+      - name: Format
+        run: ruff format --check .
+
+      - name: Imports resolve
+        # python-telegram-bot and FastAPI both fail at import time on a version
+        # mismatch, so this catches a bad pin before anyone wires a webhook.
+        run: python -c "from majsq_bot import agent, render, handlers, app; print('ok')"
+
+      - name: The webhook refuses an unsigned update
+        # The single most important behaviour in this repo: a webhook URL is
+        # public, so the secret header is the only thing standing between
+        # Telegram and anyone who guesses the URL.
+        env:
+          TELEGRAM_BOT_TOKEN: "123456:test-token-not-real"
+          TELEGRAM_WEBHOOK_SECRET: "ci-secret"
+        run: |
+          pip install httpx
+          python - <<'PY'
+          from fastapi.testclient import TestClient
+          from majsq_bot.app import app
+
+          with TestClient(app) as client:
+              assert client.get("/healthz").status_code == 200
+
+              bad = client.post("/tg/webhook/", json={"update_id": 1})
+              assert bad.status_code == 403, f"unsigned update was accepted: {bad.status_code}"
+
+              headers = {"X-Telegram-Bot-Api-Secret-Token": "ci-secret"}
+              first = client.post("/tg/webhook/", json={"update_id": 7}, headers=headers)
+              assert first.status_code == 200, first.text
+
+              # Telegram retries on any non-2xx; a retry must not act twice.
+              retry = client.post("/tg/webhook/", json={"update_id": 7}, headers=headers)
+              assert retry.json().get("duplicate") is True, retry.text
+          print("  secret header enforced, update_id de-duplicated")
+          PY
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          tags: majsq-bot:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

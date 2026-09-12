@@ -1,0 +1,100 @@
+name: Deploy bot
+
+# Manual only, on purpose. A deploy here changes what a live Telegram group
+# sees, so it is a decision someone makes, not a side effect of a merge.
+#
+# After deploying, point Telegram at the new URL — Cloud Run keeps the same URL
+# across revisions, so this is only needed the first time:
+#   curl -F "url=<service-url>/tg/webhook/" \
+#        -F "secret_token=$TELEGRAM_WEBHOOK_SECRET" \
+#        "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook"
+#
+# Anyone with write access can run it: Actions tab → Deploy agent → Run workflow.
+# One-time setup (Ali, once) is in docs/DEPLOY.md.
+on:
+  workflow_dispatch:
+    inputs:
+      service:
+        description: Cloud Run service name
+        type: string
+        default: majsq-bot
+      region:
+        description: Cloud Run region
+        type: string
+        default: northamerica-northeast1
+      agent_url:
+        description: The deployed agent's URL (from the Deploy agent run)
+        type: string
+        required: true
+      web_url:
+        description: Public majsqweb URL, for map links
+        type: string
+        default: https://majsq.festro.com
+
+permissions:
+  contents: read
+  id-token: write # keyless GCP auth via Workload Identity Federation
+
+env:
+  PROJECT_ID: festro-app
+  REPOSITORY: northamerica-northeast1-docker.pkg.dev/festro-app/festro
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the deploy secrets exist
+        # Without this the run fails deep inside the auth action with a message
+        # that reads like a Google outage. Say what is actually missing.
+        run: |
+          if [ -z "${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}" ] || [ -z "${{ secrets.GCP_CI_SERVICE_ACCOUNT }}" ]; then
+            echo "::error::Deploy secrets are not set on this repo."
+            echo "GCP_WORKLOAD_IDENTITY_PROVIDER and GCP_CI_SERVICE_ACCOUNT are both required."
+            echo "See docs/DEPLOY.md — it is a one-time setup and only Ali can do it."
+            exit 1
+          fi
+
+      - uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_CI_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Authorize Docker for Artifact Registry
+        run: gcloud auth configure-docker northamerica-northeast1-docker.pkg.dev --quiet
+
+      - name: Build and push
+        id: build
+        run: |
+          TAG="${{ env.REPOSITORY }}/majsq-bot:${GITHUB_SHA::8}"
+          docker build -t "$TAG" .
+          docker push "$TAG"
+          echo "image=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy "${{ inputs.service }}" \
+            --image "${{ steps.build.outputs.image }}" \
+            --region "${{ inputs.region }}" \
+            --project "${{ env.PROJECT_ID }}" \
+            --platform managed \
+            --allow-unauthenticated \
+            --max-instances 2 \
+            --memory 512Mi \
+            --set-env-vars "MAJSQ_AGENT_URL=${{ inputs.agent_url }},MAJSQ_WEB_URL=${{ inputs.web_url }}" \
+            --set-secrets "TELEGRAM_BOT_TOKEN=majsq-telegram-token:latest,TELEGRAM_WEBHOOK_SECRET=majsq-telegram-webhook-secret:latest,TELEGRAM_BOT_USERNAME=majsq-telegram-username:latest,MAJSQ_SERVICE_SECRET=majsq-service-secret:latest"
+
+      - name: Show the URL
+        run: |
+          URL=$(gcloud run services describe "${{ inputs.service }}" \
+            --region "${{ inputs.region }}" --project "${{ env.PROJECT_ID }}" \
+            --format 'value(status.url)')
+          echo "### Bot deployed" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Webhook URL: \`$URL/tg/webhook/\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "First deploy only — register it with Telegram (see the header of this workflow)." >> "$GITHUB_STEP_SUMMARY"
+          curl -sf "$URL/healthz" && echo "health check passed"
