@@ -13,7 +13,7 @@ import os
 import re
 import time
 
-from telegram import Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ChatMemberStatus, ChatType, ParseMode
 from telegram.ext import (
     Application,
@@ -120,10 +120,21 @@ async def _send_reply(update: Update, reply: dict, locale: str) -> None:
 
 async def start(update: Update, _context) -> None:
     locale = _locale(update)
-    await update.effective_message.reply_text(
-        render.welcome(is_group=_kind(update) == "group", locale=locale),
-        parse_mode=ParseMode.HTML,
-    )
+    if _kind(update) == "dm":
+        web = os.environ.get("MAJSQ_WEB_URL", "https://majsq.festro.com").rstrip("/")
+        keyboard = InlineKeyboardMarkup(
+            [[InlineKeyboardButton("Connecter Festro", url=f"{web}/connect")]]
+        )
+        await update.effective_message.reply_text(
+            render.welcome(is_group=False, locale=locale),
+            reply_markup=keyboard,
+            parse_mode=ParseMode.HTML,
+        )
+    else:
+        await update.effective_message.reply_text(
+            render.welcome(is_group=True, locale=locale),
+            parse_mode=ParseMode.HTML,
+        )
     await _turn(update, text="")
 
 
