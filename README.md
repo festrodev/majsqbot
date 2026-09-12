@@ -15,6 +15,17 @@ AI Tinkerers "Agents, Everywhere" hackathon, Montréal, 12 September 2026.
 | [`majsqweb`](https://github.com/festrodev/majsqweb) | The web surface. Next.js + CopilotKit. |
 | **`majsqbot`** | This. Telegram. |
 
+## Read first
+
+This repo follows the shared docs in `majsq`:
+[`DESIGN.md`](https://github.com/festrodev/majsq/blob/main/docs/DESIGN.md)
+(canonical strings, emoji, Telegram rendering rules) ·
+[`CONTRACT.md`](https://github.com/festrodev/majsq/blob/main/docs/CONTRACT.md)
+(the API) ·
+[`TEAM.md`](https://github.com/festrodev/majsq/blob/main/docs/TEAM.md).
+The ready-to-paste session prompt for this repo is
+[`docs/prompts/bot.md`](https://github.com/festrodev/majsq/blob/main/docs/prompts/bot.md).
+
 ## What's in here, and what isn't
 
 This repo is a **surface**. It turns Telegram updates into agent calls and agent
