@@ -64,7 +64,18 @@ app = FastAPI(title="majsqbot", lifespan=lifespan)
 
 
 @app.get("/healthz")
+@app.get("/healthz/")
 async def healthz():
+    # BOTH forms are registered on purpose. Cloud Run's underlying Knative
+    # infrastructure reserves the bare "/healthz" path (no trailing slash) for
+    # its own queue-proxy sidecar health probing — external requests to that
+    # exact path never reach this container at all; Google's edge answers its
+    # own 404 before the request ever arrives, for a service that is in fact
+    # running perfectly. "/healthz/" (trailing slash) is not reserved and
+    # passes through. See festrodev/majsq's majsq_agent/urls.py, which hit
+    # this first. Keep the bare path registered too, since anything calling
+    # this from inside the same Cloud Run/Knative mesh (rather than over the
+    # public internet) is unaffected and may already assume it exists.
     return {"ok": True, "service": "majsqbot", "configured": bool(TOKEN)}
 
 

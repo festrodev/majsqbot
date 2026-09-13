@@ -97,4 +97,4 @@ jobs:
           echo "Webhook URL: \`$URL/tg/webhook/\`" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "First deploy only — register it with Telegram (see the header of this workflow)." >> "$GITHUB_STEP_SUMMARY"
-          curl -sf "$URL/healthz" && echo "health check passed"
+          curl -sf "$URL/healthz/" && echo "health check passed"
